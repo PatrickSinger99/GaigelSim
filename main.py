@@ -20,6 +20,10 @@ class Card:
         return f"[CARD] {Card.card_types[self.type]} {Card.card_values[self.value]} ({self.value})\n"
 
     def val(self):
+        """
+        Returns a short card string to identify the card. Example: "k0", "h3", etc.
+        :return: String containing card type and value
+        """
         return self.type + str(self.value)
 
 
@@ -38,9 +42,18 @@ class Player:
         Player.player_id_count += 1
 
     def get_num_cards(self):
+        """
+        Gets the number of cards the player has on hand
+        :return: Integer number of cards
+        """
         return sum(1 for value in self.cards_hand.values() if value is not None)
 
-    def get_action(self):
+    def get_action(self, state):
+        """
+        Returns an action for the given state by the simulation. This can be integrated into a RL Agent etc.
+        :param state: State of the current simulation. Array of card value indices
+        :return: Player action choice
+        """
         # TODO TEMP
         possible_moves = [key for key, value in self.cards_hand.items() if value is not None]
         return random.choice(possible_moves)
@@ -75,12 +88,22 @@ class GaigelSim:
         self.current_round = 0
         self.current_turn = 0  # The progress within one round (Depending on the number of players)
 
+        # Feedback variables
+        self.ids_by_card = {None: 0}
+        self.cards_by_id = {0: None}
+
         # Create new deck
+        card_id = 1
         for card_type in GaigelSim.card_types.keys():
             for card_value in GaigelSim.card_values.keys():
                 # Add 2 cards for every possible type to the stack
                 self.card_stack.put(Card(card_value, card_type))
                 self.card_stack.put(Card(card_value, card_type))
+
+                # Assign an id to every card type (Used for observation space)
+                self.ids_by_card[card_type + str(card_value)] = card_id
+                self.cards_by_id[card_id] = card_type + str(card_value)
+                card_id += 1
 
         # Create players
         for i in range(players):
@@ -115,9 +138,16 @@ class GaigelSim:
         return return_string
 
     def shuffle_stack(self):
+        """
+        Randomly shuffles the card stack
+        """
         random.shuffle(self.card_stack.queue)
 
     def hand_out_cards(self):
+        """
+        Hands out cards from the stack to all players according to gaigel rules. First hand out 3 rounds of cards,
+        then select the trump suit, the hand out the remaining 2 rounds of cards.
+        """
         # Hand out first 3 cards for every player
         for i in range(1, 4):
             for _ in range(self.players.qsize()):
@@ -133,6 +163,9 @@ class GaigelSim:
                 self.draw_card_and_rotate()
 
     def select_starting_player(self):
+        """
+        Selects a random starting player and rotates queue to that player
+        """
         self.current_player = random.choice(self.players.queue)
 
         # Rotate player queue to selected player
@@ -142,11 +175,19 @@ class GaigelSim:
             print(f"[STATUS] Selected starting player {self.current_player.name}")
 
     def rotate_queue_to_player(self, player):
+        """
+        Rotates the player queue to the specified player
+        :param player: Player class instance
+        """
         while self.players.queue[0] != player:
             rotated_player = self.players.get()
             self.players.put(rotated_player)
 
     def draw_card(self, player):
+        """
+        Gives the specified player a card from the stack
+        :param player: Player class instance
+        """
         empty_slot = list(player.cards_hand.keys())[list(player.cards_hand.values()).index(None)]
         player.cards_hand[empty_slot] = self.card_stack.get()
 
@@ -154,6 +195,9 @@ class GaigelSim:
             print(f"[ACTION] {player.name} draws card {player.cards_hand[empty_slot].val()}")
 
     def draw_card_and_rotate(self):
+        """
+        Gives the current player a card from the stack and rotates the current player queue once forward
+        """
         # Select next player and put them back in the queue
         self.current_player = self.players.get()
         self.players.put(self.current_player)
@@ -162,6 +206,10 @@ class GaigelSim:
         self.draw_card(self.current_player)
 
     def determine_round_winner(self):
+        """
+        Counts up all played cards during current round and selects round winner. Winners points are added.
+        :return: Player class instance of winner
+        """
         start_type = self.card_round_stack[0].type
         card_round_values = []
 
@@ -191,6 +239,10 @@ class GaigelSim:
         return winner
 
     def determine_game_winner(self):
+        """
+        Sets the game winner in the class variable. Multiple winners are possible
+        :return: Game winner(s)
+        """
         max_points = max([player.points for player in self.players.queue])
 
         for player in self.players.queue:
@@ -200,6 +252,10 @@ class GaigelSim:
         return self.game_winners
 
     def validate_game_over(self):
+        """
+        Checks if a game over condition is reached. Game over if player cards are empty or player has over 101 points
+        :return: Boolean if game over
+        """
 
         for player in self.players.queue:
             if player.get_num_cards() == 0 or player.points >= 101:
@@ -208,7 +264,27 @@ class GaigelSim:
 
         return self.game_over
 
+    def get_state(self, player):
+        """
+        Get state for a player. This can be used to train decision making for a player agent
+        :param player: Player class instance
+        :return: state array including ids for all cards on the players hand and cards placed in the round
+        """
+        # First part: player hand
+        hand_card_vals = [card.val() if card is not None else card for card in player.cards_hand.values()]
+        hand_state = [self.ids_by_card[card_val] for card_val in hand_card_vals]
+
+        # Second part: round stack
+        stack_state = [self.ids_by_card[card.val()] for card in self.card_round_stack]
+        while len(stack_state) != self.players.qsize() - 1:  # -1 bc a state with all players cards placed is finished
+            stack_state.append(0)
+
+        return hand_state + stack_state
+
     def play_round(self):
+        """
+        Advances the simulation one round. Every player places a card, draws a new one, and determines a winner
+        """
 
         # Reset current turn count and increment round count
         self.current_round += 1
@@ -230,7 +306,7 @@ class GaigelSim:
             # Advance turn count
             self.current_turn += 1
 
-            player_action = self.current_player.get_action()
+            player_action = self.current_player.get_action(state=self.get_state(self.current_player))
 
             # Place card
             if 1 <= player_action <= 5:
@@ -272,6 +348,9 @@ class GaigelSim:
                       f"{', '.join([winner.name for winner in self.game_winners])}")
 
     def run(self):
+        """
+        Runs a complete gaigel simulation until game over
+        """
         while not self.game_over:
             self.play_round()
             if self.verbose:
