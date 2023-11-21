@@ -62,13 +62,15 @@ class Player:
 class GaigelSim:
     card_types = {"k": "karo", "h": "herz", "p": "pik", "z": "kreuz"}
     card_values = {0: "sieben", 2: "bube", 3: "dame", 4: "könig", 10: "zehn", 11: "ass"}
-    moves = {1: "play_card_1", 2: "play_card_2", 3: "play_card_3", 4: "play_card_4", 5: "play_card_5"}
+    moves = {0: "switch_trump_suit", 1: "play_card_1", 2: "play_card_2", 3: "play_card_3", 4: "play_card_4",
+             5: "play_card_5", 6: "melding", 7: "second_ace", 8: "higher"}  # TODO not used
 
     # TODO: Eröffnungsrunde Höher bzw zweites ass
     # TODO: Melden
     # TODO: Ass unter stapel eintauschen
     # TODO: Farbe bekennen
     # TODO: Valid Move function
+    # TODO: Group play (Über kreuz)
 
     def __init__(self, players: int, verbose: bool = False):
 
@@ -94,6 +96,7 @@ class GaigelSim:
         # State translation lookups. Get filled during deck creation
         self.ids_by_card = {None: 0}
         self.cards_by_id = {0: None}
+        self.trump_ids = {item[0]: i for i, item in enumerate(GaigelSim.card_types.items())}
 
         # Create new deck. (Standard "Württembergisches Blatt" 48 cards, 2 of each type)
         card_id = 1
@@ -275,16 +278,19 @@ class GaigelSim:
         :param player: Player class instance
         :return: state array including ids for all cards on the players hand and cards placed in the round
         """
-        # First part: player hand
+        # First part: trump
+        trump_state = self.trump_ids[self.trump]
+
+        # Second part: player hand
         hand_card_vals = [card.val() if card is not None else card for card in player.cards_hand.values()]
         hand_state = [self.ids_by_card[card_val] for card_val in hand_card_vals]
 
-        # Second part: round stack
+        # Third part: round stack
         stack_state = [self.ids_by_card[card.val()] for card in self.card_round_stack]
         while len(stack_state) != self.players.qsize() - 1:  # -1 bc a state with all players cards placed is finished
             stack_state.append(0)
 
-        return hand_state + stack_state
+        return [trump_state] + hand_state + stack_state
 
     def play_round(self):
         """
@@ -311,6 +317,7 @@ class GaigelSim:
             # Advance turn count
             self.current_turn += 1
 
+            # Get player action
             player_action = self.current_player.get_action(state=self.get_state(self.current_player))
 
             # Place card
