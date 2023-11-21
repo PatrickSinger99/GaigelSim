@@ -7,7 +7,7 @@ class Card:
     card_values = {0: "sieben", 2: "bube", 3: "dame", 4: "könig", 10: "zehn", 11: "ass"}
     card_id_count = 0
 
-    def __init__(self, card_value, card_type):
+    def __init__(self, card_value: int, card_type: str):
         # Set Card Type and Value
         self.value = card_value
         self.type = card_type
@@ -30,7 +30,7 @@ class Card:
 class Player:
     player_id_count = 0
 
-    def __init__(self, name):
+    def __init__(self, name: str):
         # Set Player Properties
         self.name = name
         self.points = 0
@@ -54,7 +54,7 @@ class Player:
         :param state: State of the current simulation. Array of card value indices
         :return: Player action choice
         """
-        # TODO TEMP
+        # TODO TEMP currently picks random. State not used
         possible_moves = [key for key, value in self.cards_hand.items() if value is not None]
         return random.choice(possible_moves)
 
@@ -71,28 +71,31 @@ class GaigelSim:
     # TODO: Valid Move function
 
     def __init__(self, players: int, verbose: bool = False):
-        # Initialize game variables
+
+        # General Game state variables
         self.card_stack = Queue(maxsize=48)
         self.players = Queue(maxsize=players)
         self.trump_suit = None  # trump card under stack
-        self.trump = None
-        self.match_color = False
-        self.card_round_stack = []
-        self.card_placed_by = []  # Tracks which player placed which card in the card_round_stack
-        self.current_player = None
+        self.trump = None  # "Trumpf"
+        self.match_color = False  # "Farben bekennen" if card stack is empty
         self.game_over = False
         self.game_winners = []
         self.verbose = verbose
+
+        # Round variables
+        self.card_round_stack = []  # Cards placed in a round. Gets reset each round
+        self.card_placed_by = []  # Tracks which player placed which card in the card_round_stack
+        self.current_player = None  # Player that has the next turn
 
         # Game time tracking
         self.current_round = 0
         self.current_turn = 0  # The progress within one round (Depending on the number of players)
 
-        # Feedback variables
+        # State translation lookups. Get filled during deck creation
         self.ids_by_card = {None: 0}
         self.cards_by_id = {0: None}
 
-        # Create new deck
+        # Create new deck. (Standard "Württembergisches Blatt" 48 cards, 2 of each type)
         card_id = 1
         for card_type in GaigelSim.card_types.keys():
             for card_value in GaigelSim.card_values.keys():
@@ -108,11 +111,6 @@ class GaigelSim:
         # Create players
         for i in range(players):
             self.players.put(Player("player_" + str(i + 1)))
-
-        # Initial actions
-        self.shuffle_stack()
-        self.select_starting_player()
-        self.hand_out_cards()
 
     def __str__(self):
         return_string = f"{'='*30} Round {self.current_round} | Turn {self.current_turn} {'='*30}\n"
@@ -143,11 +141,18 @@ class GaigelSim:
         """
         random.shuffle(self.card_stack.queue)
 
+        if self.verbose:
+            print("[STATUS] Shuffled card stack")
+
     def hand_out_cards(self):
         """
         Hands out cards from the stack to all players according to gaigel rules. First hand out 3 rounds of cards,
         then select the trump suit, the hand out the remaining 2 rounds of cards.
         """
+
+        if self.verbose:
+            print("[STATUS] Handing out cards to players")
+
         # Hand out first 3 cards for every player
         for i in range(1, 4):
             for _ in range(self.players.qsize()):
@@ -234,7 +239,7 @@ class GaigelSim:
         winner.points += played_cards_points
 
         if self.verbose:
-            print(f"[STATUS] {winner.name} wins the round (+{played_cards_points})")
+            print(f"[STATUS] {winner.name} wins the round (+{played_cards_points} points)")
 
         return winner
 
@@ -332,7 +337,7 @@ class GaigelSim:
                 self.current_player = self.players.get()
                 self.players.put(self.current_player)
                 if not self.match_color and self.verbose:
-                    print(f"{self.current_player.name} skipped card draw due to empty stack")
+                    print(f"[STATUS] {self.current_player.name} skipped card draw due to empty stack")
 
         # Switch to farbe bekennen, if stack is empty
         if self.card_stack.qsize() == 0:
@@ -351,6 +356,15 @@ class GaigelSim:
         """
         Runs a complete gaigel simulation until game over
         """
+        if self.verbose:
+            print(f"[STATUS] Starting Gaigel simulation with {self.players.qsize()} players")
+
+        # Initial actions
+        self.shuffle_stack()
+        self.select_starting_player()
+        self.hand_out_cards()
+
+        # Game loop
         while not self.game_over:
             self.play_round()
             if self.verbose:
@@ -360,4 +374,3 @@ class GaigelSim:
 if __name__ == '__main__':
     sim = GaigelSim(3, verbose=True)
     sim.run()
-
