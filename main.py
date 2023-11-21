@@ -57,7 +57,7 @@ class GaigelSim:
     # TODO: Farbe bekennen
     # TODO: Valid Move function
 
-    def __init__(self, players: int):
+    def __init__(self, players: int, verbose: bool = False):
         # Initialize game variables
         self.card_stack = Queue(maxsize=48)
         self.players = Queue(maxsize=players)
@@ -68,6 +68,8 @@ class GaigelSim:
         self.card_placed_by = []  # Tracks which player placed which card in the card_round_stack
         self.current_player = None
         self.game_over = False
+        self.game_winners = []
+        self.verbose = verbose
 
         # Game time tracking
         self.current_round = 0
@@ -136,7 +138,8 @@ class GaigelSim:
         # Rotate player queue to selected player
         self.rotate_queue_to_player(self.current_player)
 
-        print(f"[STATUS] Selected starting player {self.current_player.name}")
+        if self.verbose:
+            print(f"[STATUS] Selected starting player {self.current_player.name}")
 
     def rotate_queue_to_player(self, player):
         while self.players.queue[0] != player:
@@ -146,7 +149,9 @@ class GaigelSim:
     def draw_card(self, player):
         empty_slot = list(player.cards_hand.keys())[list(player.cards_hand.values()).index(None)]
         player.cards_hand[empty_slot] = self.card_stack.get()
-        print(f"[ACTION] {player.name} draws card {player.cards_hand[empty_slot].val()}")
+
+        if self.verbose:
+            print(f"[ACTION] {player.name} draws card {player.cards_hand[empty_slot].val()}")
 
     def draw_card_and_rotate(self):
         # Select next player and put them back in the queue
@@ -156,7 +161,7 @@ class GaigelSim:
         # Draw card from stack
         self.draw_card(self.current_player)
 
-    def determine_winner(self):
+    def determine_round_winner(self):
         start_type = self.card_round_stack[0].type
         card_round_values = []
 
@@ -177,15 +182,27 @@ class GaigelSim:
         winner = self.card_placed_by[winner_index]
 
         # Add points for winner
-        winner.points += self.card_round_stack[winner_index].value
+        played_cards_points = sum([card.value for card in self.card_round_stack])
+        winner.points += played_cards_points
 
-        print(f"[STATUS] {winner.name} wins the round")
+        if self.verbose:
+            print(f"[STATUS] {winner.name} wins the round (+{played_cards_points})")
 
         return winner
 
-    def validate_game_over(self):
+    def determine_game_winner(self):
+        max_points = max([player.points for player in self.players.queue])
+
         for player in self.players.queue:
-            if player.get_num_cards() == 0:
+            if player.points == max_points:
+                self.game_winners.append(player)
+
+        return self.game_winners
+
+    def validate_game_over(self):
+
+        for player in self.players.queue:
+            if player.get_num_cards() == 0 or player.points >= 101:
                 self.game_over = True
                 return self.game_over
 
@@ -201,6 +218,9 @@ class GaigelSim:
         self.card_round_stack = []
         self.card_placed_by = []
 
+        if self.verbose:
+            print(f"[STATUS] Starting round {self.current_round}")
+
         # PART 1: Every player plays a card
         for _ in range(self.players.qsize()):
             # Select next player and put them back in the queue
@@ -214,7 +234,9 @@ class GaigelSim:
 
             # Place card
             if 1 <= player_action <= 5:
-                print(f"[ACTION] {self.current_player.name} played {self.current_player.cards_hand[player_action].val()}")
+                if self.verbose:
+                    print(f"[ACTION] {self.current_player.name} played "
+                          f"{self.current_player.cards_hand[player_action].val()}")
 
                 # Add selected card to current round stack and remove from players hand
                 self.card_round_stack.append(self.current_player.cards_hand[player_action])
@@ -222,7 +244,7 @@ class GaigelSim:
                 self.card_placed_by.append(self.current_player)
 
         # Select winner and rotate player queue to them
-        winner = self.determine_winner()
+        winner = self.determine_round_winner()
         self.rotate_queue_to_player(winner)
 
         # PART 2: Every player draws a card starting at the winner
@@ -233,7 +255,7 @@ class GaigelSim:
                 # Stack used up. Rotate player without drawing card (Ab hier farbe bekennen)
                 self.current_player = self.players.get()
                 self.players.put(self.current_player)
-                if not self.match_color:
+                if not self.match_color and self.verbose:
                     print(f"{self.current_player.name} skipped card draw due to empty stack")
 
         # Switch to farbe bekennen, if stack is empty
@@ -242,15 +264,21 @@ class GaigelSim:
 
         # Check game over conditions
         if self.validate_game_over():
-            print("[STATUS] Game over")
+
+            self.determine_game_winner()
+
+            if self.verbose:
+                print(f"[STATUS] Game over. {'Winner is' if len(self.game_winners) == 1 else 'Winners are'} "
+                      f"{', '.join([winner.name for winner in self.game_winners])}")
 
     def run(self):
         while not self.game_over:
             self.play_round()
-            print(self)
+            if self.verbose:
+                print(self)
 
 
 if __name__ == '__main__':
-    sim = GaigelSim(3)
+    sim = GaigelSim(3, verbose=True)
     sim.run()
 
