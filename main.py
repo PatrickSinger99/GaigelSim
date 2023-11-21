@@ -42,7 +42,8 @@ class Player:
 
     def get_action(self):
         # TODO TEMP
-        return random.randint(1, 5)
+        possible_moves = [key for key, value in self.cards_hand.items() if value is not None]
+        return random.choice(possible_moves)
 
 
 class GaigelSim:
@@ -50,15 +51,23 @@ class GaigelSim:
     card_values = {0: "sieben", 2: "bube", 3: "dame", 4: "könig", 10: "zehn", 11: "ass"}
     moves = {1: "play_card_1", 2: "play_card_2", 3: "play_card_3", 4: "play_card_4", 5: "play_card_5"}
 
+    # TODO: Eröffnungsrunde Höher bzw zweites ass
+    # TODO: Melden
+    # TODO: Ass unter stapel eintauschen
+    # TODO: Farbe bekennen
+    # TODO: Valid Move function
+
     def __init__(self, players: int):
         # Initialize game variables
         self.card_stack = Queue(maxsize=48)
         self.players = Queue(maxsize=players)
         self.trump_suit = None  # trump card under stack
         self.trump = None
+        self.match_color = False
         self.card_round_stack = []
         self.card_placed_by = []  # Tracks which player placed which card in the card_round_stack
         self.current_player = None
+        self.game_over = False
 
         # Game time tracking
         self.current_round = 0
@@ -80,13 +89,15 @@ class GaigelSim:
         self.select_starting_player()
         self.hand_out_cards()
 
-
     def __str__(self):
         return_string = f"{'='*30} Round {self.current_round} | Turn {self.current_turn} {'='*30}\n"
         banner_width = len(return_string)
 
         return_string += (f"[CARD STACK] ({self.card_stack.qsize()} cards) "
                           f"{', '.join([card.val() for card in self.card_stack.queue])}")
+
+        if self.match_color:
+            return_string += "--MATCH COLOR ACTIVE--"
 
         return_string += f"\n[TRUMP SUIT] {self.trump_suit.val()}"
         return_string += f" | [TRUMP] {self.trump}"
@@ -95,7 +106,7 @@ class GaigelSim:
         for player in self.players.queue:
             return_string += (f"\n[PLAYER: {player.name}] {'(current turn) ' if player == self.current_player else ''}"
                               f"({player.get_num_cards()} cards, {player.points} points) "
-                              f"{', '.join([card.val() if card is not None else 'empty' for card in player.cards_hand.values()])}")
+                              f"{', '.join([card.val() if card is not None else '-' for card in player.cards_hand.values()])}")
 
         return_string += "\n" + "="*(banner_width - 1)
 
@@ -125,7 +136,7 @@ class GaigelSim:
         # Rotate player queue to selected player
         self.rotate_queue_to_player(self.current_player)
 
-        print(f"Selected starting player {self.current_player.name}")
+        print(f"[STATUS] Selected starting player {self.current_player.name}")
 
     def rotate_queue_to_player(self, player):
         while self.players.queue[0] != player:
@@ -135,7 +146,7 @@ class GaigelSim:
     def draw_card(self, player):
         empty_slot = list(player.cards_hand.keys())[list(player.cards_hand.values()).index(None)]
         player.cards_hand[empty_slot] = self.card_stack.get()
-        print(f"{player.name} draws card {player.cards_hand[empty_slot].val()}")
+        print(f"[ACTION] {player.name} draws card {player.cards_hand[empty_slot].val()}")
 
     def draw_card_and_rotate(self):
         # Select next player and put them back in the queue
@@ -149,20 +160,36 @@ class GaigelSim:
         start_type = self.card_round_stack[0].type
         card_round_values = []
 
+        # Calculate points for every card
         for card in self.card_round_stack:
             card_value = card.value
+            # Add 1000 if it is a trump
             if card.type == self.trump:
                 card_value += 1000
+            # Add 100 if it is a round start type
             elif card.type == start_type:
                 card_value += 100
 
             card_round_values.append(card_value)
 
-        winner = self.card_placed_by[card_round_values.index(max(card_round_values))]
-        print(f"{winner.name} wins the round")
+        # Determine winner by card score
+        winner_index = card_round_values.index(max(card_round_values))
+        winner = self.card_placed_by[winner_index]
+
+        # Add points for winner
+        winner.points += self.card_round_stack[winner_index].value
+
+        print(f"[STATUS] {winner.name} wins the round")
 
         return winner
 
+    def validate_game_over(self):
+        for player in self.players.queue:
+            if player.get_num_cards() == 0:
+                self.game_over = True
+                return self.game_over
+
+        return self.game_over
 
     def play_round(self):
 
@@ -187,7 +214,7 @@ class GaigelSim:
 
             # Place card
             if 1 <= player_action <= 5:
-                print(self.current_player.name, "played", self.current_player.cards_hand[player_action].val())
+                print(f"[ACTION] {self.current_player.name} played {self.current_player.cards_hand[player_action].val()}")
 
                 # Add selected card to current round stack and remove from players hand
                 self.card_round_stack.append(self.current_player.cards_hand[player_action])
@@ -200,12 +227,30 @@ class GaigelSim:
 
         # PART 2: Every player draws a card starting at the winner
         for _ in range(self.players.qsize()):
-            self.draw_card_and_rotate()
+            if self.card_stack.qsize() > 0 and not self.match_color:
+                self.draw_card_and_rotate()
+            else:
+                # Stack used up. Rotate player without drawing card (Ab hier farbe bekennen)
+                self.current_player = self.players.get()
+                self.players.put(self.current_player)
+                if not self.match_color:
+                    print(f"{self.current_player.name} skipped card draw due to empty stack")
+
+        # Switch to farbe bekennen, if stack is empty
+        if self.card_stack.qsize() == 0:
+            self.match_color = True
+
+        # Check game over conditions
+        if self.validate_game_over():
+            print("[STATUS] Game over")
+
+    def run(self):
+        while not self.game_over:
+            self.play_round()
+            print(self)
 
 
 if __name__ == '__main__':
     sim = GaigelSim(3)
-    print(sim)
-    sim.play_round()
-    print(sim)
+    sim.run()
 
