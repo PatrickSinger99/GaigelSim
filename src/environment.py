@@ -1,5 +1,5 @@
 import gymnasium as gym
-from simulation_v2 import GaigelSim
+from simulation import GaigelSim
 
 
 class GaigelEnv(gym.Env):

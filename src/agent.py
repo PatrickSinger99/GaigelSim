@@ -14,4 +14,3 @@ if __name__ == "__main__":
     plt.ylabel("Total Reward per Simulation")
     plt.xlabel("Simulation Round")
     plt.show()
-    
